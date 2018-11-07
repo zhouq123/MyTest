@@ -1,10 +1,9 @@
 #pragma once
-
-#include <librealsense2/rs.hpp> 
+#include "stdafx.h"
+#include "librealsense2/rs.hpp"
 #include <algorithm>
 #include <pcl/point_types.h>
 #include <pcl/filters/passthrough.h>
-//#include <pcl/visualization/cloud_viewer.h>
 #include <Eigen/Core>
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
@@ -19,7 +18,114 @@
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/visualization/pcl_visualizer.h>
 
-pcl::PointCloud<pcl::PointXYZ>::Ptr points_to_pcl(const rs2::points& points)
+
+// Align a rigid object to a scene with clutter and occlusions
+int my_pcl_registration_test(const std::string& objectPath, const  std::string& scenePath)
+{
+	// Types
+	typedef pcl::PointNormal PointNT;
+	typedef pcl::PointCloud<PointNT> PointCloudT;
+	typedef pcl::FPFHSignature33 FeatureT;
+	typedef pcl::FPFHEstimation<PointNT, PointNT, FeatureT> FeatureEstimationT;
+	typedef pcl::PointCloud<FeatureT> FeatureCloudT;
+	typedef pcl::visualization::PointCloudColorHandlerCustom<PointNT> ColorHandlerT;
+	// Point clouds
+	PointCloudT::Ptr object(new PointCloudT);
+	PointCloudT::Ptr object_aligned(new PointCloudT);
+	PointCloudT::Ptr scene(new PointCloudT);
+	FeatureCloudT::Ptr object_features(new FeatureCloudT);
+	FeatureCloudT::Ptr scene_features(new FeatureCloudT);
+
+	// Load object and scene
+	if (pcl::io::loadPCDFile<PointNT>(objectPath, *object) < 0 ||
+		pcl::io::loadPCDFile<PointNT>(scenePath, *scene) < 0)
+	{
+		std::cout << "Error loading object/scene file!" << std::endl;
+		return -1;
+	}
+
+	// Downsample
+	std::cout << "Downsampling..." << std::endl;
+	pcl::VoxelGrid<PointNT> grid;
+	const float leaf = 0.005f;
+	grid.setLeafSize(leaf, leaf, leaf);
+	grid.setInputCloud(object);
+	grid.filter(*object);
+	grid.setInputCloud(scene);
+	grid.filter(*scene);
+
+	// Estimate normals for scene
+	std::cout << "Estimating scene normals..." << std::endl;
+	pcl::NormalEstimation<PointNT, PointNT> nest;
+	nest.setRadiusSearch(0.01);
+	nest.setInputCloud(scene);
+	nest.compute(*scene);
+
+	//此处需要添加法向量计算
+	nest.setInputCloud(object);
+	nest.compute(*object);
+
+	// Estimate features
+	std::cout << "Estimating features..." << std::endl;
+	FeatureEstimationT fest;
+	fest.setRadiusSearch(0.025);
+	fest.setInputCloud(object);
+	fest.setInputNormals(object);
+	fest.compute(*object_features);
+	fest.setInputCloud(scene);
+	fest.setInputNormals(scene);
+	fest.compute(*scene_features);
+
+	// Perform alignment
+	std::cout << "Starting alignment...\n" << std::endl;
+	pcl::SampleConsensusPrerejective<PointNT, PointNT, FeatureT> align;
+	align.setInputSource(object);
+	align.setSourceFeatures(object_features);
+	align.setInputTarget(scene);
+	align.setTargetFeatures(scene_features);
+	align.setMaximumIterations(50000); // Number of RANSAC iterations
+	align.setNumberOfSamples(3); // Number of points to sample for generating/prerejecting a pose
+	align.setCorrespondenceRandomness(5); // Number of nearest features to use
+	align.setSimilarityThreshold(0.9f); // Polygonal edge length similarity threshold
+	align.setMaxCorrespondenceDistance(2.5f * leaf); // Inlier threshold
+	align.setInlierFraction(0.25f); // Required inlier fraction for accepting a pose hypothesis
+	{
+		pcl::ScopeTime t("Alignment");
+		align.align(*object_aligned);
+	}
+
+	if (align.hasConverged())
+	{
+		// Print results
+		std::cout << std::endl;
+		Eigen::Matrix4f transformation = align.getFinalTransformation();
+		std::cout << "    | %6.3f %6.3f %6.3f | \n" << transformation(0, 0) << transformation(0, 1) << transformation(0, 2) << std::endl;
+		std::cout << " R = | %6.3f %6.3f %6.3f | \n" << transformation(1, 0) << transformation(1, 1) << transformation(1, 2) << std::endl;
+		std::cout << "     | %6.3f %6.3f %6.3f | \n" << transformation(2, 0) << transformation(2, 1) << transformation(2, 2) << std::endl;
+		std::cout << " \n" << std::endl;
+		std::cout << " t = < %0.3f, %0.3f, %0.3f >\n" << transformation(0, 3) << transformation(1, 3) << transformation(2, 3) << std::endl;
+		std::cout << " \n" << std::endl;
+		std::cout << " Inliers: %i/%i\n" << align.getInliers().size() << object->size() << std::endl;
+
+		//pcl::transformPointCloud(*object, *object_aligned, transformation);
+		//*scene += *object_aligned;
+
+		// Show alignment
+		pcl::visualization::PCLVisualizer visu("Alignment");
+		visu.addPointCloud(scene, ColorHandlerT(scene, 0.0, 255.0, 0.0), "scene");
+		visu.addPointCloud(object_aligned, ColorHandlerT(object_aligned, 0.0, 0.0, 255.0), "object_aligned");
+		visu.spin();
+	}
+	else
+	{
+		std::cout << "Alignment failed!" << std::endl;
+		return -1;
+	}
+
+	return (0);
+}
+
+pcl::PointCloud<pcl::PointXYZ>::Ptr my_points_to_pcl(const rs2::points& points)
 {
 	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
 	auto sp = points.get_profile().as<rs2::video_stream_profile>();
@@ -71,9 +177,9 @@ int rs_pcl_show_test()
 		// Tell pointcloud object to map to this color frame
 		pc.map_to(color);
 
-		auto pcl_points = points_to_pcl(points);
+		auto pcl_points = my_points_to_pcl(points);
 
-		pcl_ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
+		pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
 		pcl::PassThrough<pcl::PointXYZ> pass;
 		pass.setInputCloud(pcl_points);
 		pass.setFilterFieldName("z");
@@ -94,7 +200,7 @@ int rs_pcl_show_test()
 }
 
 
-pcl::PointCloud<pcl::PointNormal>::Ptr points_to_pcl_normal(const rs2::points& points)
+pcl::PointCloud<pcl::PointNormal>::Ptr my_points_to_pcl_normal(const rs2::points& points)
 {
 	pcl::PointCloud<pcl::PointNormal>::Ptr cloud(new pcl::PointCloud<pcl::PointNormal>);
 	auto sp = points.get_profile().as<rs2::video_stream_profile>();
@@ -114,8 +220,17 @@ pcl::PointCloud<pcl::PointNormal>::Ptr points_to_pcl_normal(const rs2::points& p
 }
 
 //实时重建测试
-int rs_pcl_rebuild_test()
+int my_rs_pcl_rebuild_test()
 {
+	const int COLOR_WIDTH = 640;
+	const int COLOR_HEIGHT = 480;
+	const int COLOR_FPS = 30;
+	const int DEPTH_WIDTH = 640;
+	const int DEPTH_HEIGHT = 480;
+	const int DEPTH_FPS = 30;
+	rs2::config cfg;
+	cfg.enable_stream(RS2_STREAM_COLOR, COLOR_WIDTH, COLOR_HEIGHT, RS2_FORMAT_RGB8, COLOR_FPS);
+	cfg.enable_stream(RS2_STREAM_DEPTH, DEPTH_WIDTH, DEPTH_HEIGHT, RS2_FORMAT_Z16, DEPTH_FPS);
 	// Declare pointcloud object, for calculating pointclouds and texture mappings
 	rs2::pointcloud pc;
 	// We want the points object to be persistent so we can display the last cloud when a frame drops
@@ -123,7 +238,7 @@ int rs_pcl_rebuild_test()
 	// Declare RealSense pipeline, encapsulating the actual device and sensors
 	rs2::pipeline pipe;
 	// Start streaming with default recommended configuration
-	pipe.start();
+	pipe.start(cfg);
 
 	// Types
 	typedef pcl::PointNormal PointNT;
@@ -139,11 +254,9 @@ int rs_pcl_rebuild_test()
 
 	//体素滤波
 	pcl::VoxelGrid<PointNT> grid;
-	const float leaf = 0.005f;
+	const float leaf = 0.01f;
 	grid.setLeafSize(leaf, leaf, leaf);
-	//显示窗口
-	pcl::visualization::PCLVisualizer viewer("PCL Viewer");
-	viewer.setBackgroundColor(0, 0, 0);
+
 	//直通滤波
 	pcl::PassThrough<pcl::PointNormal> pass;
 	pass.setFilterFieldName("z");
@@ -166,7 +279,8 @@ int rs_pcl_rebuild_test()
 	align.setInlierFraction(0.25f); // Required inlier fraction for accepting a pose hypothesis
 
 	bool isFirst = true;
-	while (true) // Application still alive?
+	int count = 0;
+	while (count < 2) // Application still alive?
 	{
 		// Wait for the next set of frames from the camera
 		auto frames = pipe.wait_for_frames();
@@ -185,20 +299,24 @@ int rs_pcl_rebuild_test()
 		//// Tell pointcloud object to map to this color frame
 		//pc.map_to(color);
 
-		auto cloud = points_to_pcl_normal(points);
+		auto cloud = my_points_to_pcl_normal(points);
 
+		std::cout << "PassThrough" << std::endl;
 		//去除远的
 		pass.setInputCloud(cloud);
 		pass.filter(*cloud);
 
+		std::cout << "Downsample" << std::endl;
 		// Downsample
 		grid.setInputCloud(cloud);
 		grid.filter(*cloud);
 
+		std::cout << "Estimate normals" << std::endl;
 		// Estimate normals for scene
 		nest.setInputCloud(cloud);
 		nest.compute(*cloud);
 
+		std::cout << "Estimate features" << std::endl;
 		//特征计算
 		fest.setInputCloud(cloud);
 		fest.setInputNormals(cloud);
@@ -214,6 +332,7 @@ int rs_pcl_rebuild_test()
 		fest.setInputNormals(scene);
 		fest.compute(*scene_features);
 
+		std::cout << "alignment" << std::endl;
 		//Perform alignment
 		align.setInputSource(cloud);
 		align.setSourceFeatures(cloud_features);
@@ -229,8 +348,13 @@ int rs_pcl_rebuild_test()
 			//拼接
 			*scene += *cloud;
 		}
+		count++;
 	}
+	//显示窗口
+	pcl::visualization::PCLVisualizer viewer("PCL Viewer");
+	viewer.setBackgroundColor(0, 0, 0);
+	viewer.addPointCloud(scene, ColorHandlerT(scene, 0.0, 0.0, 255.0), "scene");
+
+	viewer.spin();
 	return 0;
 }
-
-

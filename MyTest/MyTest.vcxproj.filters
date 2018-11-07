@@ -21,7 +21,82 @@
     <ClInclude Include="targetver.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="pcl_test.h">
+    <ClInclude Include="librealsense2\h\rs_advanced_mode_command.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\h\rs_context.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\h\rs_device.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\h\rs_frame.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\h\rs_internal.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\h\rs_option.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\h\rs_pipeline.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\h\rs_processing.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\h\rs_record_playback.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\h\rs_sensor.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\h\rs_types.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\hpp\rs_context.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\hpp\rs_device.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\hpp\rs_frame.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\hpp\rs_internal.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\hpp\rs_pipeline.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\hpp\rs_processing.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\hpp\rs_record_playback.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\hpp\rs_sensor.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\hpp\rs_types.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\rs.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\rs.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\rs_advanced_mode.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\rs_advanced_mode.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="librealsense2\rsutil.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="rs_pcl_test.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
@@ -34,8 +109,10 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="rs_pcl_test.h">
-      <Filter>头文件</Filter>
-    </None>
+    <None Include="object.pcd" />
+    <None Include="scene.pcd" />
+  </ItemGroup>
+  <ItemGroup>
+    <Library Include="realsense2.lib" />
   </ItemGroup>
 </Project>
