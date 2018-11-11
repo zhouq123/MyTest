@@ -17,6 +17,7 @@
 #include <pcl/registration/sample_consensus_prerejective.h>
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/visualization/pcl_visualizer.h>
+#include <pcl/filters/statistical_outlier_removal.h>
 
 
 // Align a rigid object to a scene with clutter and occlusions
@@ -219,9 +220,16 @@ pcl::PointCloud<pcl::PointNormal>::Ptr my_points_to_pcl_normal(const rs2::points
 	return cloud;
 }
 
+//double normofTransform(cv::Mat rvec, cv::Mat tvec)
+//{
+//	return fabs(min(cv::norm(rvec), 2 * M_PI - cv::norm(rvec))) + fabs(cv::norm(tvec));
+//}
+
 //实时重建测试
-int my_rs_pcl_rebuild_test()
+int my_rs_pcl_rebuild_test(int test_count)
 {
+	Sleep(3000);
+
 	const int COLOR_WIDTH = 640;
 	const int COLOR_HEIGHT = 480;
 	const int COLOR_FPS = 30;
@@ -254,7 +262,7 @@ int my_rs_pcl_rebuild_test()
 
 	//体素滤波
 	pcl::VoxelGrid<PointNT> grid;
-	const float leaf = 0.01f;
+	const float leaf = 0.02f;
 	grid.setLeafSize(leaf, leaf, leaf);
 
 	//直通滤波
@@ -262,9 +270,13 @@ int my_rs_pcl_rebuild_test()
 	pass.setFilterFieldName("z");
 	pass.setFilterLimits(0.0, 1.0);
 
+	pcl::StatisticalOutlierRemoval<pcl::PointNormal> sor;
+	sor.setMeanK(20);
+	sor.setStddevMulThresh(1.0);
+
 	//法向量估计
 	pcl::NormalEstimation<PointNT, PointNT> nest;
-	nest.setRadiusSearch(0.01);
+	nest.setRadiusSearch(0.02);
 	//特征计算
 	FeatureEstimationT fest;
 	fest.setRadiusSearch(0.025);
@@ -278,9 +290,12 @@ int my_rs_pcl_rebuild_test()
 	align.setMaxCorrespondenceDistance(2.5f * leaf); // Inlier threshold
 	align.setInlierFraction(0.25f); // Required inlier fraction for accepting a pose hypothesis
 
+	pcl::IterativeClosestPoint<pcl::PointNormal, pcl::PointNormal> icp;
+	icp.setMaximumIterations(50000);
+
 	bool isFirst = true;
 	int count = 0;
-	while (count < 2) // Application still alive?
+	while (count < test_count) // Application still alive?
 	{
 		// Wait for the next set of frames from the camera
 		auto frames = pipe.wait_for_frames();
@@ -306,15 +321,30 @@ int my_rs_pcl_rebuild_test()
 		pass.setInputCloud(cloud);
 		pass.filter(*cloud);
 
+		//std::cout << "StatisticalOutlierRemoval" << std::endl;
+		//sor.setInputCloud(cloud);
+		//sor.filter(*cloud);
+
 		std::cout << "Downsample" << std::endl;
 		// Downsample
 		grid.setInputCloud(cloud);
 		grid.filter(*cloud);
 
+
+
 		std::cout << "Estimate normals" << std::endl;
 		// Estimate normals for scene
 		nest.setInputCloud(cloud);
 		nest.compute(*cloud);
+
+		if (isFirst) {
+			isFirst = false;
+			*scene += *cloud;
+			count++;
+			continue;
+		}
+		nest.setInputCloud(scene);
+		nest.compute(*scene);
 
 		std::cout << "Estimate features" << std::endl;
 		//特征计算
@@ -322,32 +352,59 @@ int my_rs_pcl_rebuild_test()
 		fest.setInputNormals(cloud);
 		fest.compute(*cloud_features);
 
-		if (isFirst) {
-			isFirst = false;
-			*scene += *cloud;
-			continue;
-		}
-
 		fest.setInputCloud(scene);
 		fest.setInputNormals(scene);
 		fest.compute(*scene_features);
 
 		std::cout << "alignment" << std::endl;
-		//Perform alignment
-		align.setInputSource(cloud);
-		align.setSourceFeatures(cloud_features);
-		align.setInputTarget(scene);
-		align.setTargetFeatures(scene_features);
-		{
-			//pcl::ScopeTime t("Alignment");
+
+		if (true) {
+			//使用icp
+			icp.setInputSource(cloud);
+			icp.setInputTarget(scene);
+			icp.align(*cloud);
+
+			if (icp.hasConverged())
+			{
+				double score = icp.getFitnessScore();
+
+				if (score < 0.02) {
+					*scene += *cloud;
+					// Downsample
+					grid.setInputCloud(scene);
+					grid.filter(*scene);
+				}
+				else {
+					std::cout << std::to_string(score) << std::endl;
+				}
+			}
+			else
+			{
+				std::cout << "no converged" << std::endl;
+				return (-1);
+			}
+
+		}
+		else {
+			////使用SampleConsensusPrerejective
+			align.setInputSource(cloud);
+			align.setSourceFeatures(cloud_features);
+			align.setInputTarget(scene);
+			align.setTargetFeatures(scene_features);
 			align.align(*cloud);
+			if (align.hasConverged())
+			{
+				//拼接
+				*scene += *cloud;
+				// Downsample
+				grid.setInputCloud(scene);
+				grid.filter(*scene);
+			}
+			else {
+				std::cout << "no converged" << std::endl;
+			}
 		}
 
-		if (align.hasConverged())
-		{
-			//拼接
-			*scene += *cloud;
-		}
 		count++;
 	}
 	//显示窗口
